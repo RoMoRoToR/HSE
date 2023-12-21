@@ -1,33 +1,12 @@
 from numba import njit
 from numba.openmp import openmp_context as openmp
-from numba.openmp import omp_get_thread_num, omp_get_num_threads, omp_set_num_threads, omp_get_max_threads, \
-    omp_get_wtime
+from numba.openmp import omp_get_thread_num, omp_get_num_threads, omp_set_num_threads, omp_get_max_threads, omp_get_wtime
 import numpy as np
 import random
-
-def isArraySorted(arr):
-    n = len(arr)
-    if n > 0:
-        prev = arr[0]
-        for i in range(n):
-            if arr[i] < prev:
-                return False
-            prev = arr[i]
-    return True
-
-def createRandomArr(n):
-    return np.random.randint(0, 100, n)
 
 @njit
 def getOmpTime():
     return omp_get_wtime()
-
-@njit
-def quickSortSeq(arr, low, high):
-    if low < high:
-        pi = partition(arr, low, high)
-        quickSortSeq(arr, low, pi)
-        quickSortSeq(arr, pi + 1, high)
 
 @njit
 def partition(arr, low, high):
@@ -74,36 +53,40 @@ def quickSortPar(arr, low, high, max_d, d=0):
             quickSortPar(arr, low, pi, max_d, d + 1)
             quickSortPar(arr, pi + 1, high, max_d, d + 1)
 @njit
+def quickSortSeq(arr, low, high):
+    if low < high:
+        pi = partition(arr, low, high)
+        quickSortSeq(arr, low, pi)
+        quickSortSeq(arr, pi + 1, high)
+@njit
 def quickSortParHelp(arr, max_d):
     with openmp("parallel shared(arr)"):
         with openmp("single"):
             quickSortPar(arr, 0, len(arr) - 1, max_d)
-
 @njit
 def setNumThreads(n):
     omp_set_num_threads(n)
 
-N = 100000
-ITERS = 100
-max_d = 4  # Максимальная глубина рекурсии
+def createRandomArr(n):
+    return np.random.randint(0, 100, n)
 
-# Последовательная быстрая сортировка
-arr_seq = createRandomArr(N)
-start_time_seq = getOmpTime()
-quickSortSeq(arr_seq, 0, N - 1)
-time_seq = getOmpTime() - start_time_seq
+if __name__ == "__main__":
+    sizes = [100000, 1000000, 10000000]
+    threadsCounts = [1, 2, 4, 8, 16, 24]
 
-print(f"Sequential QuickSort Time: {time_seq} seconds")
+    for N in sizes:
+        print("Size:", N)
+        arr_seq = createRandomArr(N)
+        start_time_seq = getOmpTime()
+        quickSortSeq(arr_seq, 0, N - 1)
+        time_seq = getOmpTime() - start_time_seq
+        print("Sequential QuickSort Time for Size {}: {} seconds".format(N, time_seq))
 
-# Параллельная быстрая сортировка
-for threads_n in range(1, omp_get_max_threads() + 1):
-    setNumThreads(threads_n)
-    time_par = 0
-    for it in range(ITERS):
-        arr_par = createRandomArr(N)
-        start_time_par = getOmpTime()
-        quickSortParHelp(arr_par, max_d)
-        time_par += getOmpTime() - start_time_par
-    time_par /= ITERS
-    speedup = time_seq / time_par
-    print(f"Threads: {threads_n}, Parallel Time: {time_par} seconds, Speedup: {speedup}")
+        for threads_n in threadsCounts:
+            setNumThreads(threads_n)
+            arr_par = createRandomArr(N)
+            start_time_par = getOmpTime()
+            quickSortParHelp(arr_par, 4)  # Assuming max_d is 4
+            time_par = getOmpTime() - start_time_par
+            speedup = time_seq / time_par if time_par > 0 else float('inf')
+            print("Threads: {}, Parallel Time: {}, Speedup: {}".format(threads_n, time_par, speedup))
